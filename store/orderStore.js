@@ -4,7 +4,7 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DATA_FILE = path.join(DATA_DIR, 'orders.json');
 
-let state = { nextSeq: 1, orders: {} };
+let state = { nextSeq: 1, lastOrderCode: 0, orders: {} };
 let orderCodeIndex = new Map(); // orderCode(number) -> orderId(string)
 let loaded = false;
 
@@ -36,7 +36,7 @@ async function ensureLoaded() {
     state = JSON.parse(raw);
   } catch (err) {
     if (err.code !== 'ENOENT') throw err;
-    state = { nextSeq: 1, orders: {} };
+    state = { nextSeq: 1, lastOrderCode: 0, orders: {} };
     await persist();
   }
   rebuildIndex();
@@ -49,13 +49,24 @@ async function persist() {
   await fs.rename(tmpFile, DATA_FILE);
 }
 
-// buildFn(seq) => order object đầy đủ (orderId/orderCode phải được sinh từ seq bên trong buildFn)
+// orderCode gửi PayOS phải duy nhất mãi mãi (PayOS nhớ vĩnh viễn, kể cả sau khi
+// đĩa Render bị reset). Dùng Date.now() thay vì đếm từ 1 vì thời gian không bao
+// giờ lùi lại, kể cả khi state cục bộ mất sau redeploy; lastOrderCode chỉ để
+// tránh trùng nếu 2 đơn được tạo trong cùng 1 mili-giây.
+function generateOrderCode() {
+  const candidate = Math.max(Date.now(), (state.lastOrderCode || 0) + 1);
+  state.lastOrderCode = candidate;
+  return candidate;
+}
+
+// buildFn(seq, orderCode) => order object đầy đủ (orderId sinh từ seq, orderCode đã được sinh sẵn duy nhất)
 async function createOrder(buildFn) {
   return enqueue(async () => {
     await ensureLoaded();
     const seq = state.nextSeq;
     state.nextSeq += 1;
-    const order = buildFn(seq);
+    const orderCode = generateOrderCode();
+    const order = buildFn(seq, orderCode);
     state.orders[order.orderId] = order;
     orderCodeIndex.set(order.orderCode, order.orderId);
     await persist();

@@ -2,7 +2,7 @@ const env = require('../config/env');
 const orderStore = require('../store/orderStore');
 const payosService = require('./payos.service');
 const { getProductById } = require('../data/products');
-const { formatOrderId, seqToOrderCode } = require('../utils/orderId');
+const { formatOrderId } = require('../utils/orderId');
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -55,9 +55,9 @@ async function createOrder({ shippingInfo, items }) {
   const totalAmount = lineItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const expiresAt = new Date(Date.now() + env.qrExpiryMinutes * 60 * 1000);
 
-  const order = await orderStore.createOrder((seq) => ({
+  const order = await orderStore.createOrder((seq, orderCode) => ({
     orderId: formatOrderId(seq),
-    orderCode: seqToOrderCode(seq),
+    orderCode,
     status: 'pending',
     totalAmount,
     items: lineItems,

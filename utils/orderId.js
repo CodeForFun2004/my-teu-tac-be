@@ -1,11 +1,8 @@
-// seq (số nguyên tăng dần, lưu trong data/orders.json) là nguồn duy nhất cho cả
-// orderId hiển thị và orderCode gửi PayOS — đảm bảo map 1-1, không cần bảng tra riêng.
+// seq (số nguyên tăng dần, lưu trong data/orders.json) chỉ dùng để sinh orderId
+// hiển thị nội bộ — orderCode gửi PayOS được sinh riêng trong orderStore.js vì
+// phải duy nhất mãi mãi, không được phép reset như seq.
 function formatOrderId(seq) {
   return `TT-${String(seq).padStart(6, '0')}`;
 }
 
-function seqToOrderCode(seq) {
-  return seq;
-}
-
-module.exports = { formatOrderId, seqToOrderCode };
+module.exports = { formatOrderId };

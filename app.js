@@ -6,6 +6,10 @@ const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
 
+// Render đặt sau 1 reverse proxy, luôn gắn X-Forwarded-For — cần khai báo để
+// express-rate-limit nhận đúng IP thật của khách thay vì IP nội bộ của proxy.
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: env.corsOrigin }));
 app.use(express.json());
 
