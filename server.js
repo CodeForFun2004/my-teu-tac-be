@@ -3,7 +3,19 @@ const env = require('./config/env');
 const { connectDb } = require('./config/db');
 const { startExpireOrdersSweeper } = require('./jobs/expireOrdersSweeper');
 
-connectDb()
+async function connectWithRetry(retries = 5, delayMs = 3000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await connectDb();
+    } catch (err) {
+      console.error(`[server] Kết nối MongoDB thất bại (lần ${i + 1}/${retries}):`, err.message);
+      if (i === retries - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+connectWithRetry()
   .then(() => {
     startExpireOrdersSweeper();
     app.listen(env.port, () => {
