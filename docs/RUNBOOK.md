@@ -36,7 +36,7 @@ curl http://localhost:1000/health
 ### Lưu ý
 - ngrok bản miễn phí sinh URL **mới mỗi lần chạy lại lệnh `ngrok http 1000`** (trừ khi bạn trả phí để có reserved domain cố định). Mỗi lần URL đổi → phải sửa lại `.env` và chạy lại `npm run confirm-webhook`.
 - Nếu chỉ cần test logic nghiệp vụ (không cần webhook thật từ PayOS gọi vào), có thể bỏ qua Terminal 1 & 2, chỉ chạy Terminal 3 rồi tự gửi request giả lập webhook có chữ ký hợp lệ (xem cách ký ở `services/payos.service.js` — dùng `payos.crypto.createSignatureFromObj(data, checksumKey)`).
-- File `data/orders.json` là nơi lưu order — xoá file này để reset dữ liệu test local, server sẽ tự tạo lại file rỗng khi khởi động.
+- Order lưu trong MongoDB Atlas (biến `MONGODB_URI` trong `.env`) — muốn reset dữ liệu test thì xoá document trong collection `orders`/`counters` trên Atlas UI hoặc `mongosh`, không còn file local nào để xoá nữa.
 
 ## 2. Deploy lên Render (khi triển khai thật)
 
@@ -58,7 +58,7 @@ Copy toàn bộ nội dung `.env` hiện tại vào mục **Environment** trên 
 | `FE_RETURN_URL` | `https://teutac.vn/checkout/success` |
 | `FE_CANCEL_URL` | `https://teutac.vn/cart` |
 
-Các biến **giữ nguyên, không đổi**: `PAYOS_CLIENT_ID/API_KEY/CHECKSUM_KEY`, `EMAIL_USER/PASS`, `ADMIN_EMAIL`, `GOOGLE_SHEET_WEBHOOK_URL`, `GOOGLE_SHEET_WEBHOOK_SECRET`, `QR_EXPIRY_MINUTES`.
+Các biến **giữ nguyên, không đổi**: `PAYOS_CLIENT_ID/API_KEY/CHECKSUM_KEY`, `EMAIL_USER/PASS`, `ADMIN_EMAIL`, `GOOGLE_SHEET_WEBHOOK_URL`, `GOOGLE_SHEET_WEBHOOK_SECRET`, `QR_EXPIRY_MINUTES`, `MONGODB_URI` (connection string MongoDB Atlas — dữ liệu order lưu ở đây, không phụ thuộc đĩa của Render).
 
 **Về phía Google Apps Script: không cần cấu hình lại gì cả.** Apps Script Web App là 1 endpoint HTTP độc lập, không quan tâm backend đang chạy ở localhost, ngrok hay Render — nó chỉ nhận `POST` kèm đúng `secret`. Chỉ backend đổi chỗ chạy, còn Sheet/Apps Script đứng yên.
 
@@ -67,14 +67,11 @@ Sau khi Render deploy xong và có domain `https://<ten-app>.onrender.com`, cầ
 - Cách an toàn nhất: mở **Shell** của service trên Render dashboard, chạy `npm run confirm-webhook` trực tiếp trên server (không cần đem `PAYOS_API_KEY`/`CHECKSUM_KEY` ra máy local).
 - Hoặc chạy script này từ máy local với `.env` local trỏ tạm `PAYOS_WEBHOOK_URL` sang domain Render rồi `npm run confirm-webhook` — chỉ cần API key/checksum key đúng, không cần server chạy ở local.
 
-### ⚠️ Hai điều cần biết trước khi deploy thật (ảnh hưởng trực tiếp đến việc nhận tiền)
+### ⚠️ Điều cần biết trước khi deploy thật (ảnh hưởng trực tiếp đến việc nhận tiền)
 
-**1. `data/orders.json` không persist trên Render (đĩa ephemeral).**
-Mỗi lần Render redeploy/restart service, filesystem bị reset về đúng nội dung trong Git — nghĩa là toàn bộ order (kể cả đang `pending`) sẽ mất, và nếu Render tự scale ra nhiều instance thì mỗi instance có file riêng, dữ liệu không đồng bộ giữa các instance. Hai hướng xử lý:
-- **Đơn giản, đủ cho quy mô hiện tại**: bật **Render Persistent Disk** (tính phí thêm theo dung lượng), mount vào thư mục chứa `data/`, và **chỉ chạy đúng 1 instance** (không bật auto-scale) để tránh xung đột ghi file giữa các instance.
-- **Chuẩn hơn về sau**: khi lượng đơn tăng hoặc cần chạy nhiều instance, thay `store/orderStore.js` bằng 1 DB thật (SQLite trên Render Disk, hoặc Postgres managed của Render) — chưa cần làm ngay, chỉ ghi chú để biết giới hạn hiện tại.
+**Order được lưu trong MongoDB Atlas (`store/orderStore.js` dùng `mongodb` native driver qua `config/db.js`), không còn lưu file `data/orders.json` trên đĩa Render nữa** — dữ liệu order (kể cả `pending`) sống sót qua mọi lần redeploy/restart. Lưu ý: `updateOrder`/`createOrder` vẫn serialize trong 1 process (biến `enqueue` trong `orderStore.js`) — an toàn vì Render hiện chạy đúng 1 instance (`WEB_CONCURRENCY=1`); nếu sau này scale nhiều instance thì cần thiết kế lại phần này theo hướng atomic Mongo query.
 
-**2. Gói Free của Render tự "ngủ" sau ~15 phút không có traffic.**
+**Gói Free của Render tự "ngủ" sau ~15 phút không có traffic.**
 Request đầu tiên sau khi ngủ mất vài chục giây để server "thức dậy" — nếu đúng lúc đó PayOS gọi webhook báo thanh toán thành công, request có thể bị timeout và bạn mất thông báo thanh toán (khách đã trả tiền nhưng order không tự chuyển `paid`). Vì đây là service xử lý thanh toán thật (tiền thật), nên:
 - Ưu tiên dùng gói trả phí "always-on" của Render cho service này, hoặc
 - Nếu vẫn dùng gói Free, gắn thêm 1 cron ping `GET /health` mỗi 5–10 phút (vd qua cron-job.org hoặc UptimeRobot) để giữ server không ngủ — không lý tưởng bằng gói trả phí nhưng giảm rủi ro.

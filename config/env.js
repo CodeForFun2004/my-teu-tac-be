@@ -12,6 +12,7 @@ const REQUIRED_VARS = [
   'PAYOS_WEBHOOK_URL',
   'FE_RETURN_URL',
   'FE_CANCEL_URL',
+  'MONGODB_URI',
 ];
 
 const missing = REQUIRED_VARS.filter((key) => !process.env[key]);
@@ -35,6 +36,8 @@ module.exports = {
     pass: process.env.EMAIL_PASS,
     adminEmail: process.env.ADMIN_EMAIL,
   },
+
+  mongodbUri: process.env.MONGODB_URI,
 
   corsOrigin: process.env.CORS_ORIGIN,
   publicBaseUrl: process.env.PUBLIC_BASE_URL,
